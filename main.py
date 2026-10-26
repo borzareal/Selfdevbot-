@@ -3,7 +3,7 @@ import logging
 from telegram import BotCommand
 from telegram.ext import Application
 
-from selfdevbot.ai import Coach
+from selfdevbot.ai import Coach, explain_ai_error
 from selfdevbot.config import load_config
 from selfdevbot.db import Database
 from selfdevbot.handlers import register
@@ -11,6 +11,7 @@ from selfdevbot.scheduler import schedule_all
 
 logging.basicConfig(format="%(asctime)s %(levelname)s %(name)s: %(message)s", level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)
+log = logging.getLogger("selfdevbot")
 
 COMMANDS = [
     ("planning", "Quand je vais t'écrire"),
@@ -26,6 +27,12 @@ COMMANDS = [
 async def post_init(app: Application) -> None:
     await app.bot.set_my_commands([BotCommand(c, d) for c, d in COMMANDS])
     schedule_all(app)
+    coach = app.bot_data["coach"]
+    try:
+        await coach.check()
+        log.info("IA OK (modèle %s). Le bot est prêt, envoie /start sur Telegram.", coach.model)
+    except Exception as e:
+        log.error("PROBLÈME AVEC L'IA : %s", explain_ai_error(e))
 
 
 def main() -> None:

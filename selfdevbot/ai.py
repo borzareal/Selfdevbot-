@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Awaitable, Callable
 from zoneinfo import ZoneInfo
 
+import openai
 from openai import AsyncOpenAI
 
 from .utils import DAY_NAMES, extract_json, format_days, merge_turns
@@ -124,7 +125,8 @@ def format_profile(profile: dict) -> str:
 class Coach:
     def __init__(self, api_key: str, model: str, bot_name: str, base_url: str | None = None,
                  json_mode: bool = True):
-        self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        # Délai court : par défaut le SDK peut attendre 10 min, et le bot paraît mort pendant ce temps.
+        self.client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=60, max_retries=1)
         self.model = model
         self.bot_name = bot_name
         self.json_mode = json_mode  # Gemini : on parse le JSON du texte plutôt que d'imposer response_format
@@ -132,6 +134,10 @@ class Coach:
     async def _complete(self, messages: list[dict], **kwargs):
         resp = await self.client.chat.completions.create(model=self.model, messages=messages, **kwargs)
         return resp.choices[0].message
+
+    async def check(self) -> None:
+        """Petit appel de test au démarrage, pour signaler tout de suite une clé ou un modèle invalide."""
+        await self._complete([{"role": "user", "content": "Réponds juste : ok"}])
 
     def persona(self, user: dict, now_local: datetime, memories: list[str], checkins: list[dict],
                 reminders: list[dict]) -> str:
@@ -236,6 +242,20 @@ Réponds UNIQUEMENT en JSON :
                                  "content": json.dumps(result, ensure_ascii=False)})
         msg = await self._complete(messages)
         return (msg.content or "").strip()
+
+
+def explain_ai_error(e: BaseException) -> str:
+    """Explication en français des erreurs d'API les plus courantes."""
+    if isinstance(e, openai.AuthenticationError) or (
+            isinstance(e, openai.APIStatusError) and e.status_code in (400, 403) and "API key" in str(e)):
+        return f"clé d'IA refusée : vérifie GEMINI_API_KEY / OPENAI_API_KEY dans .env ({e})"
+    if isinstance(e, openai.NotFoundError):
+        return f"modèle introuvable : mets dans .env AI_MODEL= un modèle listé sur aistudio.google.com (ex : gemini-2.5-flash) ({e})"
+    if isinstance(e, openai.RateLimitError):
+        return f"quota dépassé (trop de requêtes ou quota gratuit épuisé), réessaie plus tard ({e})"
+    if isinstance(e, (openai.APITimeoutError, openai.APIConnectionError)):
+        return f"impossible de joindre l'IA (connexion internet / pare-feu ?) ({e})"
+    return f"{type(e).__name__}: {e}"
 
 
 def _history(history: list[dict], last: dict) -> list[dict]:

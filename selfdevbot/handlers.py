@@ -16,7 +16,7 @@ from telegram.ext import (
     filters,
 )
 
-from .ai import format_profile
+from .ai import explain_ai_error, format_profile
 from .scheduler import schedule_reminder, schedule_user, send_proactive, unschedule_user
 from .utils import clean_days, format_days, parse_hhmm, parse_local_datetime, resolve_timezone, split_message, validate_checkins
 
@@ -103,6 +103,9 @@ async def ask(update: Update, step: int) -> None:
 
 async def answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     step = context.user_data.get("step", 0)
+    if step >= len(QUESTIONS) or "answers" not in context.user_data:
+        # Questionnaire interrompu (ex. redémarrage du bot) : on repart proprement.
+        return await start(update, context)
     key = QUESTIONS[step][0]
     # Réponses libres acceptées telles quelles ("vers 23h, 1h le week-end") : le modèle interprète.
     context.user_data["answers"][key] = update.message.text.strip()
@@ -123,21 +126,22 @@ async def finish_onboarding(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     cfg = context.bot_data["config"]
     chat_id = update.effective_chat.id
     profile = context.user_data.pop("answers")
+    context.user_data.pop("step", None)
 
     await reply(update, "Parfait. Je prépare ton programme, une seconde…", reply_markup=ReplyKeyboardRemove())
     await context.bot.send_chat_action(chat_id, ChatAction.TYPING)
 
-    plan = await coach.build_plan(profile, max_messages_per_day(profile.get("frequency", "")))
+    try:
+        plan = await coach.build_plan(profile, max_messages_per_day(profile.get("frequency", "")))
+    except Exception as e:
+        # L'IA est injoignable : on garde le profil avec un planning de base plutôt que tout perdre.
+        log.error("Génération du planning impossible : %s", explain_ai_error(e))
+        plan = {}
     tz = resolve_timezone(plan.get("timezone"), cfg.default_timezone)
-    checkins = validate_checkins(plan.get("checkins"))
-    if not checkins:
-        wake = parse_hhmm(profile.get("wake_time", "")) or parse_hhmm("08:00")
-        checkins = [
-            {"time": wake.strftime("%H:%M"), "days": list(range(7)),
-             "purpose": "Message du matin : motivation et ses 3 priorités du jour."},
-            {"time": "21:30", "days": list(range(7)),
-             "purpose": "Bilan du soir : ce qui a marché, ce qui n'a pas marché, objectif de demain."},
-        ]
+    checkins = validate_checkins(plan.get("checkins")) or default_checkins(profile)
+    if not plan:
+        await reply(update, "Je n'ai pas réussi à joindre mon IA pour créer ton programme sur mesure, "
+                            "alors je t'ai mis un planning de base. Tape /refaire plus tard pour le personnaliser.")
 
     db.save_onboarding(chat_id, profile, tz, plan.get("summary", ""))
     db.replace_checkins(chat_id, checkins)
@@ -152,6 +156,21 @@ async def finish_onboarding(update: Update, context: ContextTypes.DEFAULT_TYPE) 
           "ou me dire « rappelle-moi demain à 18h d'appeler ma mère ». "
           "Si un horaire ne te va pas, dis-le-moi simplement et je l'ajuste.",
     )
+
+
+def default_checkins(profile: dict) -> list[dict]:
+    every_day = list(range(7))
+    wake = parse_hhmm(profile.get("wake_time", "")) or parse_hhmm("08:00")
+    checkins = [{"time": wake.strftime("%H:%M"), "days": every_day,
+                 "purpose": "Message du matin : motivation et ses 3 priorités du jour."},
+                {"time": "21:00", "days": every_day,
+                 "purpose": "Bilan du soir : ce qui a marché, ce qui n'a pas marché, objectif de demain."}]
+    bed = parse_hhmm(profile.get("bed_time", ""))
+    if bed:
+        minutes = (bed.hour * 60 + bed.minute - 40) % (24 * 60)
+        checkins.append({"time": f"{minutes // 60:02d}:{minutes % 60:02d}", "days": every_day,
+                         "purpose": "Rappel : poser le téléphone et se préparer à dormir."})
+    return checkins
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -311,9 +330,10 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    log.error("Erreur pendant le traitement d'un message", exc_info=context.error)
+    log.error("Erreur : %s", explain_ai_error(context.error), exc_info=context.error)
     if isinstance(update, Update) and update.effective_message:
-        await update.effective_message.reply_text("Petit souci technique de mon côté, réessaie dans un instant.")
+        await update.effective_message.reply_text(
+            "Petit souci technique de mon côté, réessaie dans un instant. (Détails dans le terminal.)")
 
 
 def register(app: Application, allowed_user_ids: frozenset[int]) -> None:
