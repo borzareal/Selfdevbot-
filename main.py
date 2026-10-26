@@ -41,7 +41,8 @@ def main() -> None:
     app.bot_data["config"] = cfg
     app.bot_data["db"] = Database(cfg.database_path)
     app.bot_data["coach"] = Coach(cfg.ai_api_key, cfg.ai_model, cfg.bot_name,
-                                  base_url=cfg.ai_base_url, json_mode=cfg.json_mode)
+                                  base_url=cfg.ai_base_url, json_mode=cfg.json_mode,
+                                  fallback_models=cfg.ai_fallback_models)
     register(app, cfg.allowed_user_ids)
     app.run_polling()
 

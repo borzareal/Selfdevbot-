@@ -124,16 +124,26 @@ def format_profile(profile: dict) -> str:
 
 class Coach:
     def __init__(self, api_key: str, model: str, bot_name: str, base_url: str | None = None,
-                 json_mode: bool = True):
+                 json_mode: bool = True, fallback_models: tuple[str, ...] = ()):
         # Délai court : par défaut le SDK peut attendre 10 min, et le bot paraît mort pendant ce temps.
-        self.client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=60, max_retries=1)
+        self.client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=45, max_retries=1)
         self.model = model
+        self.fallback_models = tuple(m for m in fallback_models if m != model)
         self.bot_name = bot_name
         self.json_mode = json_mode  # Gemini : on parse le JSON du texte plutôt que d'imposer response_format
 
     async def _complete(self, messages: list[dict], **kwargs):
-        resp = await self.client.chat.completions.create(model=self.model, messages=messages, **kwargs)
-        return resp.choices[0].message
+        # Modèle surchargé (503), quota atteint (429) ou modèle indisponible : on essaie le suivant.
+        last_error: Exception | None = None
+        for model in (self.model, *self.fallback_models):
+            try:
+                resp = await self.client.chat.completions.create(model=model, messages=messages, **kwargs)
+                return resp.choices[0].message
+            except (openai.InternalServerError, openai.RateLimitError, openai.APITimeoutError,
+                    openai.NotFoundError) as e:
+                log.warning("Modèle %s indisponible (%s), essai du suivant", model, type(e).__name__)
+                last_error = e
+        raise last_error
 
     async def check(self) -> None:
         """Petit appel de test au démarrage, pour signaler tout de suite une clé ou un modèle invalide."""
@@ -251,6 +261,8 @@ def explain_ai_error(e: BaseException) -> str:
         return f"clé d'IA refusée : vérifie GEMINI_API_KEY / OPENAI_API_KEY dans .env ({e})"
     if isinstance(e, openai.NotFoundError):
         return f"modèle introuvable : mets dans .env AI_MODEL= un modèle listé sur aistudio.google.com (ex : gemini-2.5-flash) ({e})"
+    if isinstance(e, openai.InternalServerError):
+        return f"serveurs de l'IA surchargés ou en panne, réessaie dans quelques minutes ({e})"
     if isinstance(e, openai.RateLimitError):
         return f"quota dépassé (trop de requêtes ou quota gratuit épuisé), réessaie plus tard ({e})"
     if isinstance(e, (openai.APITimeoutError, openai.APIConnectionError)):
