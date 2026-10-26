@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 from openai import AsyncOpenAI
 
-from .utils import DAY_NAMES, format_days
+from .utils import DAY_NAMES, extract_json, format_days, merge_turns
 
 log = logging.getLogger(__name__)
 
@@ -122,10 +122,12 @@ def format_profile(profile: dict) -> str:
 
 
 class Coach:
-    def __init__(self, api_key: str, model: str, bot_name: str):
-        self.client = AsyncOpenAI(api_key=api_key)
+    def __init__(self, api_key: str, model: str, bot_name: str, base_url: str | None = None,
+                 json_mode: bool = True):
+        self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.model = model
         self.bot_name = bot_name
+        self.json_mode = json_mode  # Gemini : on parse le JSON du texte plutôt que d'imposer response_format
 
     async def _complete(self, messages: list[dict], **kwargs):
         resp = await self.client.chat.completions.create(model=self.model, messages=messages, **kwargs)
@@ -188,14 +190,12 @@ Règles :
 
 Réponds UNIQUEMENT en JSON :
 {{"timezone": "...", "summary": "...", "checkins": [{{"time": "HH:MM", "days": [0,1,2,3,4], "purpose": "..."}}]}}"""
-        msg = await self._complete(
-            [{"role": "user", "content": prompt}], response_format={"type": "json_object"}
-        )
-        try:
-            return json.loads(msg.content or "{}")
-        except json.JSONDecodeError:
+        kwargs = {"response_format": {"type": "json_object"}} if self.json_mode else {}
+        msg = await self._complete([{"role": "user", "content": prompt}], **kwargs)
+        plan = extract_json(msg.content or "")
+        if plan is None:
             log.warning("Plan JSON invalide : %s", msg.content)
-            return {}
+        return plan or {}
 
     async def proactive_message(self, system: str, history: list[dict], purpose: str) -> str:
         """Message envoyé à l'initiative du bot (check-in planifié ou rappel)."""
@@ -207,14 +207,14 @@ Réponds UNIQUEMENT en JSON :
             "relance autrement ; s'il a déjà fait la chose, félicite au lieu de rappeler). "
             "Ne dis pas que c'est un message programmé."
         )
-        messages = [{"role": "system", "content": system}, *_history(history),
-                    {"role": "system", "content": instruction}]
+        messages = [{"role": "system", "content": system},
+                    *_history(history, {"role": "user", "content": instruction})]
         msg = await self._complete(messages)
         return (msg.content or "").strip()
 
     async def chat(self, system: str, history: list[dict], user_text: str, execute: ToolExecutor) -> str:
-        messages = [{"role": "system", "content": system}, *_history(history),
-                    {"role": "user", "content": user_text}]
+        messages = [{"role": "system", "content": system},
+                    *_history(history, {"role": "user", "content": user_text})]
         for _ in range(5):
             msg = await self._complete(messages, tools=TOOLS)
             if not msg.tool_calls:
@@ -222,11 +222,8 @@ Réponds UNIQUEMENT en JSON :
             messages.append({
                 "role": "assistant",
                 "content": msg.content,
-                "tool_calls": [
-                    {"id": c.id, "type": "function",
-                     "function": {"name": c.function.name, "arguments": c.function.arguments}}
-                    for c in msg.tool_calls
-                ],
+                # model_dump garde les champs en plus (ex. la "thought signature" exigée par Gemini)
+                "tool_calls": [c.model_dump(exclude_none=True) for c in msg.tool_calls],
             })
             for call in msg.tool_calls:
                 try:
@@ -241,5 +238,5 @@ Réponds UNIQUEMENT en JSON :
         return (msg.content or "").strip()
 
 
-def _history(history: list[dict]) -> list[dict]:
-    return [{"role": m["role"], "content": m["content"]} for m in history if m["role"] in ("user", "assistant")]
+def _history(history: list[dict], last: dict) -> list[dict]:
+    return merge_turns([m for m in history if m["role"] in ("user", "assistant")] + [last])

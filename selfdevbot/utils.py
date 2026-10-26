@@ -1,5 +1,6 @@
 """Fonctions pures (heures, jours, validation du plan) — testables sans Telegram ni OpenAI."""
 
+import json
 import re
 from datetime import datetime, time, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -89,3 +90,32 @@ def split_message(text: str, limit: int = 4000) -> list[str]:
     if text:
         chunks.append(text)
     return chunks
+
+
+def extract_json(text: str) -> dict | None:
+    """Récupère l'objet JSON d'une réponse, même entouré de ```json ... ``` ou de texte."""
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end <= start:
+        return None
+    try:
+        value = json.loads(text[start:end + 1])
+    except json.JSONDecodeError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def merge_turns(history: list[dict]) -> list[dict]:
+    """Fusionne les messages consécutifs d'un même rôle et commence par l'utilisateur.
+
+    Plusieurs messages proactifs sans réponse donneraient des tours "assistant" consécutifs,
+    que certains modèles (Gemini) acceptent mal.
+    """
+    merged: list[dict] = []
+    for m in history:
+        if merged and merged[-1]["role"] == m["role"]:
+            merged[-1]["content"] += "\n\n" + m["content"]
+        else:
+            merged.append({"role": m["role"], "content": m["content"]})
+    if merged and merged[0]["role"] == "assistant":
+        merged.insert(0, {"role": "user", "content": "(début de la conversation)"})
+    return merged

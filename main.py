@@ -33,7 +33,8 @@ def main() -> None:
     app = Application.builder().token(cfg.telegram_token).post_init(post_init).build()
     app.bot_data["config"] = cfg
     app.bot_data["db"] = Database(cfg.database_path)
-    app.bot_data["coach"] = Coach(cfg.openai_api_key, cfg.openai_model, cfg.bot_name)
+    app.bot_data["coach"] = Coach(cfg.ai_api_key, cfg.ai_model, cfg.bot_name,
+                                  base_url=cfg.ai_base_url, json_mode=cfg.json_mode)
     register(app, cfg.allowed_user_ids)
     app.run_polling()
 

@@ -1,7 +1,7 @@
 # Selfdevbot — ton Jarvis perso sur Telegram
 
 Un coach de développement personnel / assistant façon Alfred (Bruce Wayne) ou Jarvis (Tony Stark),
-branché sur l'API OpenAI. Il **t'écrit de lui-même** aux bons moments de ta journée :
+branché sur **Gemini** (gratuit) ou l'API OpenAI. Il **t'écrit de lui-même** aux bons moments de ta journée :
 
 > 14:00 — « Salut, n'oublie pas que tu dois aller à la salle aujourd'hui, faudrait y aller rapidement
 > pour avoir le temps de taffer quand tu rentres ! »
@@ -23,7 +23,7 @@ seule plateforme qui le permet simplement et gratuitement.
 - **Questionnaire d'accueil** (`/start`) : prénom, objectifs, mauvaises habitudes (et quand elles
   frappent), emploi du temps, heures de lever / coucher / repas, ville (pour le fuseau horaire),
   style de coach (doux / équilibré / strict), nombre de messages par jour.
-- **Planning sur mesure** généré par GPT : message du matin, rappels sport/travail/repas, messages
+- **Planning sur mesure** généré par l'IA : message du matin, rappels sport/travail/repas, messages
   anti-mauvaises-habitudes au bon moment, bilan du soir, rappel avant de dormir, en distinguant
   semaine et week-end.
 - **Messages proactifs contextuels** : chaque message est rédigé au moment de l'envoi, en tenant
@@ -38,21 +38,23 @@ seule plateforme qui le permet simplement et gratuitement.
 
 1. **Crée le bot** : sur Telegram, écris à [@BotFather](https://t.me/BotFather), `/newbot`, choisis
    un nom (ex. *Jarvis*), récupère le **token**.
-2. **Clé OpenAI** : https://platform.openai.com/api-keys (il faut un peu de crédit sur le compte).
+2. **Clé d'IA** : au choix
+   - **Gemini (gratuit)** : https://aistudio.google.com/apikey → `GEMINI_API_KEY` dans `.env`
+   - OpenAI (payant) : https://platform.openai.com/api-keys → `OPENAI_API_KEY` dans `.env`
 3. **Lance-le** (Python 3.11+) :
 
 ```bash
 git clone <ce repo> && cd Selfdevbot-
 python -m venv .venv && source .venv/bin/activate   # Windows : .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env    # puis remplis TELEGRAM_BOT_TOKEN et OPENAI_API_KEY
+cp .env.example .env    # puis remplis TELEGRAM_BOT_TOKEN et GEMINI_API_KEY
 python main.py
 ```
 
 4. Ouvre ton bot sur Telegram et tape `/start`.
 
 > **Conseil** : mets ton ID Telegram dans `ALLOWED_USER_IDS` (demande-le à @userinfobot) pour que
-> personne d'autre ne consomme tes crédits OpenAI.
+> personne d'autre ne consomme ton quota d'IA.
 
 ## Le faire tourner 24h/24
 
@@ -81,8 +83,10 @@ WantedBy=multi-user.target
 
 ## Coût
 
-Avec `gpt-5-mini`, un utilisateur qui reçoit ~7 messages par jour et discute un peu coûte de l'ordre
-de quelques centimes par jour. Passe `OPENAI_MODEL=gpt-5` pour un coach plus fin (plus cher).
+- **Gemini** : l'offre gratuite suffit pour un usage perso (attention : sur l'offre gratuite, Google
+  peut utiliser les conversations pour améliorer ses modèles). Modèle par défaut `gemini-flash-latest`,
+  modifiable avec `AI_MODEL`.
+- **OpenAI** : avec `gpt-5-mini`, quelques centimes par jour pour un utilisateur.
 
 ## Structure
 

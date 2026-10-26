@@ -4,7 +4,9 @@ from datetime import datetime, time, timedelta, timezone
 from selfdevbot.db import Database
 from selfdevbot.utils import (
     clean_days,
+    extract_json,
     format_days,
+    merge_turns,
     parse_hhmm,
     parse_local_datetime,
     resolve_timezone,
@@ -62,6 +64,25 @@ class UtilsTest(unittest.TestCase):
         chunks = split_message(text)
         self.assertEqual(len(chunks), 2)
         self.assertTrue(all(len(c) <= 4000 for c in chunks))
+
+
+    def test_extract_json(self):
+        self.assertEqual(extract_json('```json\n{"a": 1}\n```'), {"a": 1})
+        self.assertEqual(extract_json('Voici : {"a": {"b": 2}} voilà'), {"a": {"b": 2}})
+        self.assertIsNone(extract_json("pas de json"))
+        self.assertIsNone(extract_json("{cassé"))
+
+    def test_merge_turns(self):
+        turns = [{"role": "assistant", "content": "Debout !"},
+                 {"role": "assistant", "content": "Tu dors ?"},
+                 {"role": "user", "content": "oui"},
+                 {"role": "user", "content": "[interne]"}]
+        self.assertEqual(merge_turns(turns), [
+            {"role": "user", "content": "(début de la conversation)"},
+            {"role": "assistant", "content": "Debout !\n\nTu dors ?"},
+            {"role": "user", "content": "oui\n\n[interne]"},
+        ])
+        self.assertEqual(turns[0]["content"], "Debout !")  # l'historique d'origine n'est pas modifié
 
 
 class DatabaseTest(unittest.TestCase):
