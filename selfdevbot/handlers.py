@@ -18,7 +18,9 @@ from telegram.ext import (
 
 from .ai import explain_ai_error, format_profile
 from .scheduler import schedule_reminder, schedule_user, send_proactive, unschedule_user
-from .utils import clean_days, format_days, parse_hhmm, parse_local_datetime, resolve_timezone, split_message, validate_checkins
+from .utils import (clean_days, format_days, parse_hhmm, parse_local_datetime, parse_voice_request,
+                    resolve_timezone, split_message, validate_checkins)
+from .voice import MAX_CHARS
 
 log = logging.getLogger(__name__)
 
@@ -316,17 +318,43 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     db = context.bot_data["db"]
     chat_id = user["chat_id"]
-    text = update.message.text
+    text, wants_voice = parse_voice_request(update.message.text)
 
-    await context.bot.send_chat_action(chat_id, ChatAction.TYPING)
+    await context.bot.send_chat_action(chat_id, ChatAction.RECORD_VOICE if wants_voice else ChatAction.TYPING)
     history = db.recent_messages(chat_id)
+    prompt = text + (VOICE_HINT if wants_voice else "")
     answer_text = await context.bot_data["coach"].chat(
-        build_system_prompt(context, user), history, text, make_tool_executor(context, user)
+        build_system_prompt(context, user), history, prompt, make_tool_executor(context, user)
     )
     db.add_message(chat_id, "user", text)
-    if answer_text:
-        db.add_message(chat_id, "assistant", answer_text)
+    if not answer_text:
+        return
+    db.add_message(chat_id, "assistant", answer_text)
+    if wants_voice:
+        await send_voice_reply(update, context, answer_text)
+    else:
         await reply(update, answer_text)
+
+
+VOICE_HINT = ("\n\n[Interne : ta réponse sera lue à voix haute en message vocal. Écris comme tu parlerais : "
+              "phrases fluides, pas d'emojis, pas de listes ni de mise en forme, pas trop long.]")
+
+
+async def send_voice_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> None:
+    voice = context.bot_data.get("voice")
+    if not voice:
+        await reply(update, text + "\n\n(Vocal indisponible : ajoute ELEVENLABS_API_KEY dans le .env.)")
+        return
+    if len(text) > MAX_CHARS:
+        await reply(update, text)
+        return
+    try:
+        audio = await voice.synthesize(text)
+    except Exception as e:
+        log.error("ElevenLabs en échec : %s", e)
+        await reply(update, text + "\n\n(Le vocal n'a pas marché cette fois, voici le texte.)")
+        return
+    await update.effective_message.reply_voice(audio)
 
 
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:

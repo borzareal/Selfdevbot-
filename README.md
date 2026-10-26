@@ -31,6 +31,14 @@ seule plateforme qui le permet simplement et gratuitement.
 - **Conversation libre** avec mémoire : raconte ta journée, demande des conseils...
 - **Langage naturel** : « rappelle-moi vendredi à 10h de payer le loyer », « décale mon rappel salle
   à 18h », « je me couche à minuit maintenant » : il crée ou modifie les rappels lui-même (function calling).
+- **Réponses en vocal (ElevenLabs)** : finis ton message par `ans=voc` et il te répond par un
+  message vocal. Exemple :
+  ```
+  yo assistant, rappelle-moi mes objectifs d'aujourd'hui stp
+  ans=voc
+  ```
+  Active-le avec `ELEVENLABS_API_KEY` dans `.env` (clé sur https://elevenlabs.io/app/settings/api-keys).
+  Voix par défaut : *George* (posée, accent britannique, très Alfred), modifiable avec `ELEVENLABS_VOICE_ID`.
 - Commandes : `/planning`, `/profil`, `/coach` (il t'écrit tout de suite), `/pause`, `/reprendre`,
   `/refaire`, `/oublie`, `/aide`.
 
@@ -96,6 +104,7 @@ selfdevbot/config.py     lecture du .env
 selfdevbot/db.py         SQLite : profils, planning, rappels, historique, mémoire
 selfdevbot/ai.py         persona, génération du planning, messages proactifs, chat + outils
 selfdevbot/scheduler.py  envoi automatique des messages (JobQueue)
+selfdevbot/voice.py      messages vocaux ElevenLabs
 selfdevbot/handlers.py   questionnaire, commandes, conversation
 selfdevbot/utils.py      heures, jours, validation
 tests/                   python -m unittest discover -s tests

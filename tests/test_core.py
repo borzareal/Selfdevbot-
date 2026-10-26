@@ -9,6 +9,7 @@ from selfdevbot.utils import (
     merge_turns,
     parse_hhmm,
     parse_local_datetime,
+    parse_voice_request,
     resolve_timezone,
     split_message,
     to_ptb_days,
@@ -65,6 +66,16 @@ class UtilsTest(unittest.TestCase):
         self.assertEqual(len(chunks), 2)
         self.assertTrue(all(len(c) <= 4000 for c in chunks))
 
+
+    def test_parse_voice_request(self):
+        self.assertEqual(parse_voice_request("yo, mes objectifs stp\nans=voc"), ("yo, mes objectifs stp", True))
+        self.assertEqual(parse_voice_request("salut ANS = VOC "), ("salut", True))
+        self.assertEqual(parse_voice_request("salut"), ("salut", False))
+        self.assertEqual(parse_voice_request("ans=voc puis autre chose"), ("ans=voc puis autre chose", False))
+
+    def test_clean_for_speech(self):
+        from selfdevbot.voice import clean_for_speech
+        self.assertEqual(clean_for_speech("**Go** à la salle 💪\n- 3 séries"), "Go à la salle \n3 séries")
 
     def test_extract_json(self):
         self.assertEqual(extract_json('```json\n{"a": 1}\n```'), {"a": 1})

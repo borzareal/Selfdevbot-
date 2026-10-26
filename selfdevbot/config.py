@@ -21,6 +21,9 @@ class Config:
     default_timezone: str
     allowed_user_ids: frozenset[int]
     database_path: str
+    elevenlabs_api_key: str | None
+    elevenlabs_voice_id: str
+    elevenlabs_model: str
 
 
 def load_config() -> Config:
@@ -54,4 +57,8 @@ def load_config() -> Config:
         default_timezone=os.getenv("DEFAULT_TIMEZONE", "Europe/Paris"),
         allowed_user_ids=allowed,
         database_path=os.getenv("DATABASE_PATH", "selfdevbot.db"),
+        elevenlabs_api_key=os.getenv("ELEVENLABS_API_KEY") or None,
+        # George : voix masculine mûre, accent britannique, parfaite pour un Alfred.
+        elevenlabs_voice_id=os.getenv("ELEVENLABS_VOICE_ID") or "JBFqnCBsd6RMkjVDRZzb",
+        elevenlabs_model=os.getenv("ELEVENLABS_MODEL") or "eleven_multilingual_v2",
     )

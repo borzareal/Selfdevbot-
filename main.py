@@ -8,6 +8,7 @@ from selfdevbot.config import load_config
 from selfdevbot.db import Database
 from selfdevbot.handlers import register
 from selfdevbot.scheduler import schedule_all
+from selfdevbot.voice import Voice
 
 logging.basicConfig(format="%(asctime)s %(levelname)s %(name)s: %(message)s", level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -43,6 +44,9 @@ def main() -> None:
     app.bot_data["coach"] = Coach(cfg.ai_api_key, cfg.ai_model, cfg.bot_name,
                                   base_url=cfg.ai_base_url, json_mode=cfg.json_mode,
                                   fallback_models=cfg.ai_fallback_models)
+    if cfg.elevenlabs_api_key:
+        app.bot_data["voice"] = Voice(cfg.elevenlabs_api_key, cfg.elevenlabs_voice_id, cfg.elevenlabs_model)
+        log.info("Vocaux ElevenLabs activés (finis un message par ans=voc).")
     register(app, cfg.allowed_user_ids)
     app.run_polling()
 

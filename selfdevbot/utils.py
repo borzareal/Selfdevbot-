@@ -92,6 +92,15 @@ def split_message(text: str, limit: int = 4000) -> list[str]:
     return chunks
 
 
+_VOICE_TAG_RE = re.compile(r"\s*ans\s*=\s*voc\s*$", re.IGNORECASE)
+
+
+def parse_voice_request(text: str) -> tuple[str, bool]:
+    """'rappelle-moi mes objectifs\nans=voc' -> ('rappelle-moi mes objectifs', True)."""
+    cleaned = _VOICE_TAG_RE.sub("", text)
+    return cleaned.strip(), cleaned != text
+
+
 def extract_json(text: str) -> dict | None:
     """Récupère l'objet JSON d'une réponse, même entouré de ```json ... ``` ou de texte."""
     start, end = text.find("{"), text.rfind("}")
